@@ -1,5 +1,11 @@
 package io.ionic.crossplatform.plugins.todo;
 
+import static org.koin.java.KoinJavaComponent.inject;
+
+import static io.ionic.crossplatform.plugins.todo.Constants.Ionic.GET_ALL_RESPONSE_KEY;
+import static io.ionic.crossplatform.plugins.todo.Constants.Ionic.GET_ONE_RESPONSE_KEY;
+import static io.ionic.crossplatform.plugins.todo.Constants.Ionic.ID_PARAMETER_KEY;
+
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -7,82 +13,104 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import org.json.JSONException;
-
 import java.util.List;
+
+import io.ionic.crossplatform.plugins.todo.data.ToDoItem;
+import kotlin.Lazy;
 
 @CapacitorPlugin(name = "ToDo")
 public class ToDoPlugin extends Plugin {
 
-    protected JSArray getMockData() {
-        JSArray todos = new JSArray();
-
-        JSObject todo1 = new JSObject();
-        todo1.put("id", 1);
-        todo1.put("name", "Interview with Ionic");
-        todo1.put("dueDate", 1634569785944L);
-        todo1.put("done", true);
-        todos.put(todo1);
-
-        JSObject todo2 = new JSObject();
-        todo2.put("id", 2);
-        todo2.put("name", "Create amazing product");
-        todo2.put("dueDate", 1634569785944L);
-        todo2.put("done", false);
-        todos.put(todo2);
-
-        JSObject todo3 = new JSObject();
-        todo3.put("id", 3);
-        todo3.put("name", "???");
-        todo3.put("dueDate", 1634569785944L);
-        todo3.put("done", false);
-        todos.put(todo3);
-
-        JSObject todo4 = new JSObject();
-        todo4.put("id", 4);
-        todo4.put("name", "Profit");
-        todo4.put("dueDate", 1634569785944L);
-        todo4.put("done", false);
-        todos.put(todo4);
-
-        return todos;
-    }
+    private Lazy<DataAccessObject> dao = inject(DataAccessObject.class);
 
     @PluginMethod()
     public void getAll(PluginCall call) {
-        JSObject result = new JSObject();
-        result.put("todos", this.getMockData());
-        call.resolve(result);
+        CoroutineBridge.INSTANCE.fetchDataFromCoroutine(
+            new CoroutineBridgeIOBlock() {
+                @Override
+                public Object execute() {
+                    return dao.getValue().readAll();
+                }
+
+                @Override
+                public void result(Object ... data) {
+                    JSArray todos = new JSArray();
+
+                    for (Object d : (List<Object>) data[0]) {
+                        ToDoItem todo = (ToDoItem) d;
+                        todos.put(todo.toJSObject());
+                    }
+
+                    JSObject result = new JSObject();
+                    result.put(GET_ALL_RESPONSE_KEY, todos);
+
+                    call.resolve(result);
+                }
+            }
+        );
     }
 
     @PluginMethod()
     public void getOne(PluginCall call) {
-        JSArray todos = this.getMockData();
-        int todoId = call.getInt("id");
-        try {
-            List<JSObject> todoList = todos.toList();
-            for (JSObject todo : todoList) {
-                if (todo.getInt("id") == todoId) {
+        CoroutineBridge.INSTANCE.fetchDataFromCoroutine(
+            new CoroutineBridgeIOBlock() {
+                @Override
+                public Object execute() {
+                    ToDoItem todoItem = ToDoItem.Companion.fromJSObject(call.getData());
+
+                    return dao.getValue().readOne(todoItem.getId());
+                }
+
+                @Override
+                public void result(Object ... data) {
+                    ToDoItem toDoItem = (ToDoItem) data[0];
+
                     JSObject result = new JSObject();
-                    result.put("todo", todo);
+                    result.put(GET_ONE_RESPONSE_KEY, toDoItem.toJSObject());
+
                     call.resolve(result);
                 }
             }
-        } catch (JSONException e) {
-            call.reject(e.getLocalizedMessage());
-        }
-        call.reject("TODO NOT FOUND");
+        );
     }
 
     @PluginMethod()
     public void upsert(PluginCall call) {
-        // TODO: Implement upsert
-        call.resolve();
+        CoroutineBridge.INSTANCE.fetchDataFromCoroutine(
+            new CoroutineBridgeIOBlock() {
+                @Override
+                public Object execute() {
+                    ToDoItem todoItem = ToDoItem.Companion.fromJSObject(call.getData());
+                    if (todoItem.getId() != null) {
+                        return dao.getValue().update(todoItem);
+                    } else {
+                        return dao.getValue().insert(todoItem);
+                    }
+                }
+
+                @Override
+                public void result(Object ... data) {
+                    call.resolve();
+                }
+            }
+        );
     }
 
     @PluginMethod()
     public void delete(PluginCall call) {
-        // TODO: Implement delete
-        call.resolve();
+        CoroutineBridge.INSTANCE.fetchDataFromCoroutine(
+            new CoroutineBridgeIOBlock() {
+                @Override
+                public Object execute() {
+                    int todoId = call.getInt(ID_PARAMETER_KEY);
+                    return dao.getValue().delete(todoId);
+                }
+
+                @Override
+                public void result(Object ... data) {
+                    call.resolve();
+                }
+            }
+        );
     }
 }
